@@ -1,10 +1,12 @@
 
 import React, { useEffect, useState } from 'react';
-import { getProducts, deleteProduct, createProduct, updateProduct } from '../api';
+import { getProducts, deleteProduct, createProduct, updateProduct, getCartItems, addToCart } from '../api';
 import AddProductDialog from './AddProductDialog';
 import EditProductDialog from './EditProductDialog';
 import ProductDetailsDialog from './ProductDetailsDialog';
 import DeleteProductDialog from './DeleteProductDialog';
+import ShoppingCart from './ShoppingCart';
+import CartButton from './CartButton';
 
 export default function ProductList() {
   const [products, setProducts] = useState([]);
@@ -21,6 +23,11 @@ export default function ProductList() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  
+  // Cart state
+  const [showCart, setShowCart] = useState(false);
+  const [cartItems, setCartItems] = useState([]);
+  const [addingToCart, setAddingToCart] = useState({});
 
   useEffect(() => {
     async function fetchProducts() {
@@ -34,7 +41,17 @@ export default function ProductList() {
       }
     }
     fetchProducts();
+    fetchCartItems();
   }, []);
+
+  const fetchCartItems = async () => {
+    try {
+      const data = await getCartItems();
+      setCartItems(data);
+    } catch (error) {
+      console.error('Failed to fetch cart items:', error);
+    }
+  };
 
   const handleDeleteClick = (product) => {
     setProductToDelete(product);
@@ -122,8 +139,27 @@ export default function ProductList() {
     setShowDetailsDialog(true);
   };
 
+  // Cart handlers
+  const handleAddToCart = async (productId) => {
+    setAddingToCart(prev => ({ ...prev, [productId]: true }));
+    try {
+      await addToCart(productId, 1);
+      await fetchCartItems(); // Refresh cart items
+      alert('Product added to cart!');
+    } catch (error) {
+      console.error('Failed to add to cart:', error);
+      alert('Failed to add to cart: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setAddingToCart(prev => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  const getTotalCartItems = () => {
+    return cartItems.reduce((total, item) => total + item.quantity, 0);
+  };
+
   return (
-    <div className="p-6 min-h-screen w-full">
+    <div className="p-6 min-h-screen" style={{ maxWidth: '1236px', margin: '0 auto', width: '100%' }}>
       <div className="mb-[49px] text-left">
         <h2 className="font-inter font-normal text-[13.2px] leading-[1.59] text-[#0A0A0A] text-left">Product Management</h2>
       </div>
@@ -145,19 +181,26 @@ export default function ProductList() {
             </svg>
           </span>
         </div>
-        <button
-          className="flex items-center gap-2 bg-[#030213] px-[24px] py-[8px] h-[31.5px] rounded-[6.75px] font-inter font-medium text-[12px] hover:bg-[#23234a] transition shadow min-w-[116px]"
-          style={{ lineHeight: '1.46', letterSpacing: '0.01em', color: '#fff' }}
-          onClick={() => setShowAddDialog(true)}
-        >
-          <span className="flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="6" y="2" width="2" height="10" rx="1" fill="white" />
-              <rect x="2" y="6" width="10" height="2" rx="1" fill="white" />
-            </svg>
-          </span>
-          <span className="text-white">Add Product</span>
-        </button>
+        
+        <div className="flex items-center gap-4">
+          <CartButton 
+            itemCount={getTotalCartItems()} 
+            onClick={() => setShowCart(true)} 
+          />
+          <button
+            className="flex items-center gap-2 bg-[#030213] px-[24px] py-[8px] h-[31.5px] rounded-[6.75px] font-inter font-medium text-[12px] hover:bg-[#23234a] transition shadow min-w-[116px]"
+            style={{ lineHeight: '1.46', letterSpacing: '0.01em', color: '#fff' }}
+            onClick={() => setShowAddDialog(true)}
+          >
+            <span className="flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="2" width="2" height="10" rx="1" fill="white" />
+                <rect x="2" y="6" width="10" height="2" rx="1" fill="white" />
+              </svg>
+            </span>
+            <span className="text-white">Add Product</span>
+          </button>
+        </div>
       </div>
 
       {/* Product grid */}
@@ -169,7 +212,7 @@ export default function ProductList() {
             {filteredProducts.map(product => (
               <div
                 key={product.id}
-                className="bg-white border border-[rgba(0,0,0,0.1)] rounded-[12.75px] shadow-[0_10px_15px_0_rgba(0,0,0,0.1),0_4px_6px_0_rgba(0,0,0,0.1)] p-[14px] flex flex-col justify-between h-[234.75px] w-[264px]"
+                className="bg-white border border-[rgba(0,0,0,0.1)] rounded-[12.75px] shadow-[0_10px_15px_0_rgba(0,0,0,0.1),0_4px_6px_0_rgba(0,0,0,0.1)] p-[14px] flex flex-col h-[270px] w-[264px]"
                 style={{ margin: '10px' }}
               >
               <div className="flex-1">
@@ -182,8 +225,11 @@ export default function ProductList() {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-[7px] w-full">
-                <button className="flex-1 inline-flex items-center justify-center gap-[4px] bg-white text-[#0A0A0A] px-[12px] py-[6px] h-[28px] rounded-[6.75px] border border-[rgba(0,0,0,0.1)] hover:bg-white transition text-[11.3px] font-medium" style={{ backgroundColor: '#ffffff' }} onClick={() => handleViewClick(product)}>
+              
+              {/* Bottom section with buttons */}
+              <div className="mt-auto space-y-4">
+                <div className="flex gap-[7px] w-full">
+                  <button className="flex-1 inline-flex items-center justify-center gap-[4px] bg-white text-[#0A0A0A] px-[12px] py-[6px] h-[28px] rounded-[6.75px] border border-[rgba(0,0,0,0.1)] hover:bg-white transition text-[11.3px] font-medium" style={{ backgroundColor: '#ffffff' }} onClick={() => handleViewClick(product)}>
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M1 7s2.5-5 6-5 6 5 6 5-2.5 5-6 5-6-5-6-5z" stroke="#0A0A0A" strokeWidth="1.17" strokeLinecap="round" strokeLinejoin="round"/>
                     <circle cx="7" cy="7" r="2" stroke="#0A0A0A" strokeWidth="1.17"/>
@@ -204,7 +250,27 @@ export default function ProductList() {
                   </svg>
                 </button>
               </div>
+              
+              {/* Add to Cart button */}
+              <div style={{ paddingTop: '8px' }}>
+                <button 
+                  className="w-full inline-flex items-center justify-center gap-[4px] bg-white text-[#0A0A0A] px-[12px] py-[6px] h-[28px] rounded-[6.75px] border border-[rgba(0,0,0,0.1)] hover:bg-white transition text-[11.3px] font-medium disabled:opacity-50"
+                  style={{ backgroundColor: '#ffffff' }}
+                  onClick={() => handleAddToCart(product.id)}
+                  disabled={addingToCart[product.id] || product.stock === 0}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M2 2h2l.9 6h7.1l1-6H4" stroke="#0A0A0A" strokeWidth="1.17" strokeLinecap="round" strokeLinejoin="round"/>
+                    <circle cx="5" cy="11" r="1" stroke="#0A0A0A" strokeWidth="1.17"/>
+                    <circle cx="11" cy="11" r="1" stroke="#0A0A0A" strokeWidth="1.17"/>
+                  </svg>
+                  <span>
+                    {addingToCart[product.id] ? 'Adding...' : product.stock === 0 ? 'Out of Stock' : 'Add to Cart'}
+                  </span>
+                </button>
+              </div>
             </div>
+          </div>
           ))}
         </div>
         </div>
@@ -241,6 +307,14 @@ export default function ProductList() {
         product={productToDelete}
         onConfirm={handleDeleteConfirm}
         deleting={deleting}
+      />
+
+      <ShoppingCart
+        isOpen={showCart}
+        onClose={() => {
+          setShowCart(false);
+          fetchCartItems(); // Refresh cart items when closing
+        }}
       />
     </div>
   );
