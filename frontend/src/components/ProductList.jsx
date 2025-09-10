@@ -1,11 +1,13 @@
 
 import React, { useEffect, useState } from 'react';
-import { getProducts, deleteProduct, createProduct, updateProduct } from '../api';
+import { getProducts, deleteProduct, createProduct, updateProduct, getCartItems, addToCart } from '../api';
 import AddProductDialog from './AddProductDialog';
 import EditProductDialog from './EditProductDialog';
 import ProductDetailsDialog from './ProductDetailsDialog';
 import DeleteProductDialog from './DeleteProductDialog';
 import Toast from './Toast';
+import ShoppingCartSimple from './ShoppingCartSimple';
+import PersistentCartWidget from './PersistentCartWidget';
 
 export default function ProductList() {
   const [products, setProducts] = useState([]);
@@ -22,6 +24,11 @@ export default function ProductList() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  
+  // Cart state
+  const [cartItems, setCartItems] = useState([]);
+  const [addingToCart, setAddingToCart] = useState({});
+  const [showCart, setShowCart] = useState(false);
   
   // Toast state
   const [toast, setToast] = useState({
@@ -45,7 +52,17 @@ export default function ProductList() {
 
   useEffect(() => {
     fetchProducts();
+    fetchCartItems();
   }, []);
+
+  const fetchCartItems = async () => {
+    try {
+      const data = await getCartItems();
+      setCartItems(data);
+    } catch (error) {
+      console.error('Failed to fetch cart items:', error);
+    }
+  };
 
   const handleDeleteClick = (product) => {
     setProductToDelete(product);
@@ -133,13 +150,46 @@ export default function ProductList() {
     setShowDetailsDialog(true);
   };
 
+  // Cart handlers
+  const handleAddToCart = async (productId) => {
+    setAddingToCart(prev => ({ ...prev, [productId]: true }));
+    try {
+      await addToCart(productId, 1);
+      await fetchCartItems(); // Refresh cart items
+      await fetchProducts(); // Refresh products to update stock counts
+      setToast({
+        isVisible: true,
+        message: 'Product added to cart!',
+        type: 'success'
+      });
+    } catch (error) {
+      console.error('Failed to add to cart:', error);
+      setToast({
+        isVisible: true,
+        message: 'Failed to add to cart: ' + (error.response?.data?.detail || error.message),
+        type: 'error'
+      });
+    } finally {
+      setAddingToCart(prev => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  const getTotalCartItems = () => {
+    return cartItems.reduce((total, item) => total + item.quantity, 0);
+  };
+
+  const getTotalCartPrice = () => {
+    return cartItems.reduce((total, item) => total + ((item.product?.price || 0) * item.quantity), 0);
+  };
+
   return (
-    <div className="p-6 min-h-screen" style={{ maxWidth: '1236px', margin: '0 auto', width: '100%' }}>
-      <div className="mb-[49px] text-left">
-        <h2 className="font-inter font-normal text-[13.2px] leading-[1.59] text-[#0A0A0A] text-left">Product Management</h2>
-      </div>
-      {/* Search bar and Add Product button */}
-      <div className="flex items-center justify-between mb-8 gap-4 w-full">
+    <>
+      <div className="p-6 min-h-screen" style={{ maxWidth: '1236px', margin: '0 auto', width: '100%' }}>
+        <div className="mb-[49px] text-left">
+          <h2 className="font-inter font-normal text-[13.2px] leading-[1.59] text-[#0A0A0A] text-left">Product Management</h2>
+        </div>
+        {/* Search bar and Add Product button */}
+        <div className="flex items-center justify-between mb-8 gap-4 w-full">
         <div className="relative max-w-[392px] w-full">
           <input
             type="text"
@@ -172,14 +222,14 @@ export default function ProductList() {
             <span className="text-white">Add Product</span>
           </button>
         </div>
-      </div>
+        </div>
 
-      {/* Product grid */}
-      {loading ? (
-        <div>Loading...</div>
-      ) : (
-        <div className="w-full">
-          <div className="flex flex-wrap mt-12" style={{ margin: '-10px', marginTop: '48px' }}>
+        {/* Product grid */}
+        {loading ? (
+          <div>Loading...</div>
+        ) : (
+          <div className="w-full">
+            <div className="flex flex-wrap mt-12" style={{ margin: '-10px', marginTop: '48px' }}>
             {filteredProducts.map(product => (
               <div
                 key={product.id}
@@ -297,6 +347,30 @@ export default function ProductList() {
                     <span>Edit</span>
                   </button>
                   
+                  {/* Add to Cart Button */}
+                  <button 
+                    className="inline-flex items-center justify-center rounded-[6.75px] hover:bg-green-600 transition"
+                    style={{ 
+                      width: '31.5px', 
+                      height: '28px',
+                      backgroundColor: '#22C55E',
+                      border: 'none',
+                      outline: 'none'
+                    }}
+                    onClick={() => handleAddToCart(product.id)}
+                    disabled={addingToCart === product.id}
+                  >
+                    {addingToCart === product.id ? (
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2.625 2.625h1.75l1.312 6.562a0.875 0.875 0 0 0 0.875 0.688h4.375l1.313-5.25H6.125" stroke="#FFFFFF" strokeWidth="1.1666666269302368" strokeLinecap="round" strokeLinejoin="round"/>
+                        <circle cx="8.75" cy="12.25" r="0.4375" stroke="#FFFFFF" strokeWidth="1.1666666269302368"/>
+                        <circle cx="6.125" cy="12.25" r="0.4375" stroke="#FFFFFF" strokeWidth="1.1666666269302368"/>
+                      </svg>
+                    )}
+                  </button>
+                  
                   {/* Delete Button */}
                   <button 
                     className="inline-flex items-center justify-center rounded-[6.75px] hover:bg-red-700 transition"
@@ -317,23 +391,23 @@ export default function ProductList() {
                 </div>
               </div>
             ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Add Product Dialog */}
-      <AddProductDialog
-        isOpen={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
-        newProduct={newProduct}
-        setNewProduct={setNewProduct}
-        onSubmit={handleAddProduct}
-        adding={adding}
-      />
+        {/* Add Product Dialog */}
+        <AddProductDialog
+          isOpen={showAddDialog}
+          onClose={() => setShowAddDialog(false)}
+          newProduct={newProduct}
+          setNewProduct={setNewProduct}
+          onSubmit={handleAddProduct}
+          adding={adding}
+        />
 
-      <EditProductDialog
-        isOpen={showEditDialog}
-        onClose={() => setShowEditDialog(false)}
+        <EditProductDialog
+          isOpen={showEditDialog}
+          onClose={() => setShowEditDialog(false)}
         product={editProduct}
         setProduct={setEditProduct}
         onSubmit={handleEditProduct}
@@ -360,6 +434,24 @@ export default function ProductList() {
         isVisible={toast.isVisible}
         onClose={() => setToast({ ...toast, isVisible: false })}
       />
+
+      {/* Persistent Cart Widget - Always visible */}
+      <PersistentCartWidget
+        itemCount={getTotalCartItems()}
+        totalPrice={getTotalCartPrice()}
+        onClick={() => setShowCart(true)}
+      />
     </div>
+
+    {/* Shopping Cart - Rendered outside main container for proper modal overlay */}
+    <ShoppingCartSimple
+      isOpen={showCart}
+      onClose={() => setShowCart(false)}
+      onItemRemoved={() => {
+        fetchCartItems();
+        fetchProducts();
+      }}
+    />
+    </>
   );
 }
