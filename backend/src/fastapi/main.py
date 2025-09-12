@@ -145,13 +145,19 @@ async def add_to_cart(cart_item: CartItemCreate, db: Session = Depends(get_db)):
     if existing_item:
         # Update quantity
         new_quantity = existing_item.quantity + cart_item.quantity
-        if product.stock < new_quantity:
+        if product.stock < new_quantity - existing_item.quantity:
             raise HTTPException(status_code=400, detail="Not enough stock available")
+        
+        # Reduce product stock by the additional quantity
+        product.stock -= cart_item.quantity
         existing_item.quantity = new_quantity
         db.commit()
         db.refresh(existing_item)
         return existing_item
     else:
+        # Reduce product stock
+        product.stock -= cart_item.quantity
+        
         # Create new cart item
         db_cart_item = CartItem(product_id=cart_item.product_id, quantity=cart_item.quantity)
         db.add(db_cart_item)
@@ -165,11 +171,20 @@ async def update_cart_item(cart_item_id: int, cart_item: CartItemUpdate, db: Ses
     if not db_cart_item:
         raise HTTPException(status_code=404, detail="Cart item not found")
     
-    # Check stock availability
+    # Get the product
     product = db.query(Product).filter(Product.id == db_cart_item.product_id).first()
-    if product.stock < cart_item.quantity:
+    
+    # Calculate the difference in quantity
+    quantity_diff = cart_item.quantity - db_cart_item.quantity
+    
+    # Check if we have enough stock for the increase
+    if quantity_diff > 0 and product.stock < quantity_diff:
         raise HTTPException(status_code=400, detail="Not enough stock available")
     
+    # Update product stock
+    product.stock -= quantity_diff
+    
+    # Update cart item quantity
     db_cart_item.quantity = cart_item.quantity
     db.commit()
     db.refresh(db_cart_item)
@@ -181,12 +196,24 @@ async def remove_from_cart(cart_item_id: int, db: Session = Depends(get_db)):
     if not db_cart_item:
         raise HTTPException(status_code=404, detail="Cart item not found")
     
+    # Restore stock to the product
+    product = db.query(Product).filter(Product.id == db_cart_item.product_id).first()
+    if product:
+        product.stock += db_cart_item.quantity
+    
     db.delete(db_cart_item)
     db.commit()
     return {"message": f"Cart item with ID {cart_item_id} has been removed"}
 
 @app.delete("/cart/")
 async def clear_cart(db: Session = Depends(get_db)):
+    # Restore stock for all cart items
+    cart_items = db.query(CartItem).all()
+    for item in cart_items:
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        if product:
+            product.stock += item.quantity
+    
     db.query(CartItem).delete()
     db.commit()
     return {"message": "Cart has been cleared"}
@@ -199,23 +226,15 @@ async def checkout(db: Session = Depends(get_db)):
     
     total_amount = 0
     
-    # Check stock and calculate total
+    # Calculate total (stock is already reserved)
     for item in cart_items:
         product = db.query(Product).filter(Product.id == item.product_id).first()
         if not product:
             raise HTTPException(status_code=404, detail=f"Product with ID {item.product_id} not found")
         
-        if product.stock < item.quantity:
-            raise HTTPException(status_code=400, detail=f"Not enough stock for {product.name}")
-        
         total_amount += product.price * item.quantity
     
-    # Update stock and clear cart
-    for item in cart_items:
-        product = db.query(Product).filter(Product.id == item.product_id).first()
-        product.stock -= item.quantity
-    
-    # Clear cart
+    # Clear cart (stock is already reduced when items were added to cart)
     db.query(CartItem).delete()
     db.commit()
     

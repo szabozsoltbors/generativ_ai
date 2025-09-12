@@ -145,6 +145,7 @@ export default function ProductList() {
     try {
       await addToCart(productId, 1);
       await fetchCartItems(); // Refresh cart items
+      await fetchProducts(); // Refresh products to update stock counts
       alert('Product added to cart!');
     } catch (error) {
       console.error('Failed to add to cart:', error);
